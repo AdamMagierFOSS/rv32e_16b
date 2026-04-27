@@ -8,7 +8,7 @@ use cpu::{Cpu, StepResult};
 use std::env;
 use std::process;
 
-const MEM_CELLS: usize = 65536; // 128KB byte-addressable
+const MEM_CELLS: usize = 131072; // 128K cells (matches linker script)
 const MAX_STEPS: u64 = 10_000_000;
 
 fn main() {
@@ -48,7 +48,7 @@ fn run_binary(args: &[String]) {
             if parts.len() == 2 {
                 let addr = parse_u32(parts[0]);
                 let val = parse_u32(parts[1]);
-                cpu.mem.store32(addr >> 1, val);
+                cpu.mem.store32(addr, val);
                 println!("  set [0x{:04X}] = {}", addr, val);
             }
             i += 2;
@@ -89,9 +89,10 @@ fn run_binary(args: &[String]) {
     }
 
     if !cpu.uart_output.is_empty() {
+        let chars: Vec<u8> = cpu.uart_output.iter().map(|&c| c as u8).collect();
         println!("\n--- UART output ---");
-        print!("{}", String::from_utf8_lossy(&cpu.uart_output));
-        if cpu.uart_output.last() != Some(&b'\n') {
+        print!("{}", String::from_utf8_lossy(&chars));
+        if chars.last() != Some(&b'\n') {
             println!();
         }
         println!("--- end UART ---");
@@ -108,23 +109,24 @@ fn run_binary(args: &[String]) {
 fn run_demo() {
     let mut cpu = Cpu::new(1024);
 
-    // Sum 1..=5. PC is now byte-addressed, so standard RV32 encoding works.
-    //   0x00: addi x1, x0, 0
-    //   0x04: addi x2, x0, 1
-    //   0x08: addi x3, x0, 6
-    //   0x0C: beq  x2, x3, +16  -> 0x1C (ebreak)
-    //   0x10: add  x1, x1, x2
-    //   0x14: addi x2, x2, 1
-    //   0x18: beq  x0, x0, -12  -> 0x0C
-    //   0x1C: ebreak
+    // Sum 1..=5. All addresses and offsets are in cell units.
+    // Each instruction = 2 cells. PC increments by 2.
+    //   cell  0: addi x1, x0, 0      # acc = 0
+    //   cell  2: addi x2, x0, 1      # i = 1
+    //   cell  4: addi x3, x0, 6      # bound = 6
+    //   cell  6: beq  x2, x3, +8     # if i==6, jump to cell 14 (ebreak)
+    //   cell  8: add  x1, x1, x2     # acc += i
+    //   cell 10: addi x2, x2, 1      # i++
+    //   cell 12: beq  x0, x0, -6     # jump back to cell 6
+    //   cell 14: ebreak
     let program: &[u32] = &[
         0x00000093, // addi x1, x0, 0
         0x00100113, // addi x2, x0, 1
         0x00600193, // addi x3, x0, 6
-        0x00310863, // beq  x2, x3, +16
+        0x00310463, // beq  x2, x3, +8  (cell offset)
         0x002080B3, // add  x1, x1, x2
         0x00110113, // addi x2, x2, 1
-        0xFE000AE3, // beq  x0, x0, -12
+        0xFE000DE3, // beq  x0, x0, -6  (cell offset)
         0x00100073, // ebreak
     ];
     cpu.load_program(0, program);
@@ -135,7 +137,7 @@ fn run_demo() {
     let mut steps = 0u64;
     loop {
         let pc = cpu.pc;
-        let raw = cpu.mem.load32(pc >> 1);
+        let raw = cpu.mem.load32(pc);
         let result = cpu.step();
         steps += 1;
 

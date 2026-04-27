@@ -32,18 +32,21 @@ fn load_elf(file_data: &[u8]) -> io::Result<LoadedBinary> {
     let phnum = read_u16_le(file_data, 44) as usize;
     let phentsize = read_u16_le(file_data, 42) as usize;
 
-    let mut max_addr: usize = 0;
+    // p_vaddr and p_memsz are in cell units for RV32E-16B.
+    // p_filesz is in bytes (each cell = 2 bytes).
+    // Allocate image in bytes based on max cell address × 2.
+    let mut max_cell_addr: usize = 0;
     for i in 0..phnum {
         let ph = phoff + i * phentsize;
         let p_type = read_u32_le(file_data, ph);
-        if p_type != 1 { continue; } // PT_LOAD
+        if p_type != 1 { continue; }
         let p_vaddr = read_u32_le(file_data, ph + 8) as usize;
         let p_memsz = read_u32_le(file_data, ph + 20) as usize;
-        let end = p_vaddr + p_memsz;
-        if end > max_addr { max_addr = end; }
+        let end_cell = p_vaddr + p_memsz;
+        if end_cell > max_cell_addr { max_cell_addr = end_cell; }
     }
 
-    let mut image = vec![0u8; max_addr];
+    let mut image = vec![0u8; max_cell_addr * 2];
     for i in 0..phnum {
         let ph = phoff + i * phentsize;
         let p_type = read_u32_le(file_data, ph);
@@ -51,7 +54,8 @@ fn load_elf(file_data: &[u8]) -> io::Result<LoadedBinary> {
         let p_offset = read_u32_le(file_data, ph + 4) as usize;
         let p_vaddr = read_u32_le(file_data, ph + 8) as usize;
         let p_filesz = read_u32_le(file_data, ph + 16) as usize;
-        image[p_vaddr..p_vaddr + p_filesz]
+        let byte_offset = p_vaddr * 2;
+        image[byte_offset..byte_offset + p_filesz]
             .copy_from_slice(&file_data[p_offset..p_offset + p_filesz]);
     }
 
