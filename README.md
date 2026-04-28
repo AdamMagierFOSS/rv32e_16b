@@ -58,23 +58,23 @@ The `build.sh` script runs:
 
 ### Prerequisites
 
-You need a modified LLVM toolchain with these patches:
-- `DataLayout` `B16` specifier for configurable byte width throughout LLVM IR
-- `ilp32e16` ABI in clang: `CHAR_BIT=16`, `char`/`short` = 16-bit `i16` in IR, `BoolWidth=16`
-- BPAU-aware assembler: fixup values converted to cell units, `Tag_bytes_per_addr_unit` ELF attribute
-- BPAU-aware ELF writer: symbol values and sizes in cell units for allocatable sections
-- BPAU-aware lld: auto-detects BPAU from ELF attributes, cell-addressed section layout, correct `p_filesz`/`p_memsz` in program headers, RISC-V relocation `P` computation with `/bpau`
+You need a modified LLVM toolchain from the `rv32e_16b` branch of
+<https://github.com/AdamMagierFOSS/llvm-project>. This branch adds
+`ilp32e16` ABI support with 16-bit cell addressing throughout clang,
+LLVM IR, the assembler, and lld.
 
-Build it with:
 ```
+git clone -b rv32e_16b https://github.com/AdamMagierFOSS/llvm-project.git
+cd llvm-project
+mkdir build && cd build
 cmake -G Ninja -DLLVM_TARGETS_TO_BUILD=RISCV -DLLVM_ENABLE_PROJECTS="clang;lld" \
       -DLLVM_USE_LINKER=mold -DCMAKE_BUILD_TYPE=Release ../llvm
 ninja clang lld
 ```
 
-Set `LLVM_BIN` to point to the built tools:
+Then set `LLVM_BIN` to point to the built tools:
 ```
-LLVM_BIN=/path/to/build/bin ./build.sh hello.c
+LLVM_BIN=/path/to/llvm-project/build/bin ./build.sh hello.c
 ```
 
 ## Standard I/O header
